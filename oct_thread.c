@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 
 #include "oct_log.h"
+#include "oct_proxy.h"
 #include "oct_thread.h"
 
 static void *
@@ -28,6 +29,17 @@ oct_thread_main(void *argument)
 			oct_log_info("accpet new connection from %s:%d", client_ip,
 				ntohs(client_addr.sin_port));
 		}
+		/* 初始化代理模块 */
+		oct_conn_t *conn = oct_proxy_init();
+		if (NULL == conn) {
+			oct_log_error("init proxy module error");
+			close(client_fd);
+			continue;
+		}
+		conn->client_fd = client_fd;
+		/* 进行代理 */
+		oct_proxy_process(conn);
+		/* 关闭套接字 */
 		close(client_fd);
 	}
 	return NULL;

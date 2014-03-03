@@ -43,9 +43,7 @@ main(int argc, const char *argv[])
 	oct_thread_arg_t arg;
 	arg.listen_fd = listen_fd;
 	oct_thread_create(&arg, 5);
-	/* 循环侦测线程状态，判断是否需要添加线程 */
-	while (1) {
-		;
-	}
+	/* TODO 循环侦测线程状态，判断是否需要添加线程 */
+	while (1) {}
 	return 0;
 }
