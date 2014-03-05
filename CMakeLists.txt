@@ -5,6 +5,7 @@ set (SRC_LIST
 	oct_log.c
 	oct_proxy.c
 	oct_thread.c
+	oct_http.c
 	)
 add_executable (octopus ${SRC_LIST})
 target_link_libraries (octopus pthread)
