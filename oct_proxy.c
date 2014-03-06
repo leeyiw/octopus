@@ -17,7 +17,7 @@ oct_proxy_req_hdr(oct_conn_t *conn)
 	if (n == 0) {
 		oct_log_info("client orderly shutdown");
 		return OCT_PROXY_STOP;
-	} else if(n == -1) {
+	} else if (n == -1) {
 		oct_log_info("recv data from client error: %s", ERRMSG);
 		return OCT_PROXY_STOP;
 	}
