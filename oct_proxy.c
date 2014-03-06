@@ -2,6 +2,7 @@
 #include <sys/epoll.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include "oct_http.h"
 #include "oct_log.h"
@@ -64,6 +65,8 @@ oct_proxy_init()
 	c->req_hdr_len = 0;
 	c->req_hdr_max_len = REQUEST_HEADER_MAX_SIZE;
 	c->req_hdr = (char *)malloc(REQUEST_HEADER_MAX_SIZE);
+
+	return c;
 }
 
 void
