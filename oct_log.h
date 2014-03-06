@@ -21,7 +21,7 @@
 	oct_log(OCT_LOG_WARN, __FILE__, __LINE__, __VA_ARGS__)
 #define oct_log_error(...) \
 	oct_log(OCT_LOG_ERROR, __FILE__, __LINE__, __VA_ARGS__)
-#define oct_log_fatal(fmt, ...) \
+#define oct_log_fatal(...) \
 	oct_log(OCT_LOG_FATAL, __FILE__, __LINE__, __VA_ARGS__)
 
 #define ERRMSG strerror(errno)

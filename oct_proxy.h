@@ -16,6 +16,9 @@ typedef struct _oct_conn_t {
 	size_t req_hdr_len;
 	size_t req_hdr_max_len;
 	char *req_hdr;
+
+	size_t host_len;
+	char *host;
 } oct_conn_t;
 
 extern oct_conn_t *oct_proxy_init();

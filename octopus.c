@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 
 #include "oct_log.h"
+#include "oct_socket.h"
 #include "oct_thread.h"
 
 int
@@ -19,6 +20,15 @@ main(int argc, const char *argv[])
 	oct_log_info("actopus start/running");
 	/* 初始化套接字 */
 	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (-1 == listen_fd) {
+		oct_log_fatal("create socket error: %s", ERRMSG);
+		exit(EXIT_FAILURE);
+	}
+	/* 设置地址重用 */
+	if (-1 == oct_set_so_reuseaddr(listen_fd)) {
+		oct_log_warn("set socket reuse address error: %s", ERRMSG);
+		exit(EXIT_FAILURE);
+	}
 	/* 设置监听地址 */
 	memset(&server_addr, 0, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
