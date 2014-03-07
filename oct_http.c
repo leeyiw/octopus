@@ -22,7 +22,7 @@ oct_http_parse_req_hdr_fields(oct_conn_t *conn, char *field, int len)
 	if (colon == NULL) {
 		return;
 	}
-	if (conn->host != NULL && 0 == strncmp(key, "Host", colon - key)) {
+	if (conn->host == NULL && 0 == strncmp(key, "Host", colon - key)) {
 		conn->host_len = len - (value - key);
 		conn->host = value;
 	}

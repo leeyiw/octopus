@@ -23,12 +23,17 @@ oct_proxy_req_hdr(oct_conn_t *conn)
 	}
 	for (i = 0; i < n; i++) {
 		if (conn->req_hdr[i] == '\r' && conn->req_hdr[i + 1] == '\n') {
+			/* 如果是第一行，则解析请求行，否则解析请求字段 */
 			if (line_start == 0) {
 				oct_http_parse_req_line(conn, &conn->req_hdr[line_start],
 					i- line_start);
 			} else {
 				oct_http_parse_req_hdr_fields(conn, &conn->req_hdr[line_start],
 					i - line_start);
+			}
+			/* 遇到两个\r\n表示到了头部的结尾 */
+			if (conn->req_hdr[i + 2] == '\r' && conn->req_hdr[i + 3] == '\n') {
+				break;
 			}
 			line_start = i + 2;
 		}
@@ -74,11 +79,10 @@ oct_proxy_process(oct_conn_t *conn)
 {
 	struct epoll_event event;
 	struct epoll_event events[EPOLL_MAX_EVENTS];
-	int epoll_fd;
 	int epoll_timeout = 10;
 	int loop = 1;
 
-	if (-1 == (epoll_fd = epoll_create(2))) {
+	if (-1 == (conn->epoll_fd = epoll_create(2))) {
 		oct_log_error("create epoll file descriptor error: %s", ERRMSG);
 		return;
 	}
@@ -86,13 +90,15 @@ oct_proxy_process(oct_conn_t *conn)
 	memset(&event, 0, sizeof(&event));
 	event.events = EPOLLIN;
 	event.data.fd = conn->client_fd;
-	if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn->client_fd, &event)) {
+	if (-1 == epoll_ctl(conn->epoll_fd, EPOLL_CTL_ADD, conn->client_fd,
+		&event)) {
 		oct_log_error("add client fd to epoll fd error: %s", ERRMSG);
 		return;
 	}
 	while (loop) {
 		int i, nevents;
-		nevents = epoll_wait(epoll_fd, events, EPOLL_MAX_EVENTS, epoll_timeout);
+		nevents = epoll_wait(conn->epoll_fd, events, EPOLL_MAX_EVENTS,
+			epoll_timeout);
 		if (-1 == nevents) {
 			oct_log_error("epoll_wait error: %s", ERRMSG);
 		} else if (0 == nevents) {
@@ -111,5 +117,5 @@ oct_proxy_process(oct_conn_t *conn)
 		}
 	}
 	/* 释放epoll资源 */
-	close(epoll_fd);
+	close(conn->epoll_fd);
 }

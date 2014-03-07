@@ -12,6 +12,7 @@
 typedef struct _oct_conn_t {
 	int client_fd;
 	int server_fd;
+	int epoll_fd;
 
 	size_t req_hdr_len;
 	size_t req_hdr_max_len;
