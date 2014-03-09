@@ -5,6 +5,7 @@
 
 #define EPOLL_MAX_EVENTS		64
 #define REQUEST_HEADER_MAX_SIZE	8192
+#define OCT_PROXY_BUF_LEN		2048
 
 #define OCT_PROXY_SUCCESS		0
 #define OCT_PROXY_FAIL			-1
@@ -26,6 +27,7 @@ typedef struct _oct_conn_t {
 } oct_conn_t;
 
 extern oct_conn_t *oct_proxy_init();
+extern void oct_proxy_destroy(oct_conn_t *conn);
 extern void oct_proxy_process(oct_conn_t *conn);
 
 #endif  // OCT_PROXY_H_

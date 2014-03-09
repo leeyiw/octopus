@@ -76,11 +76,22 @@ oct_proxy_connect_server(oct_conn_t *conn)
 		} else {
 			oct_log_info("connect to server %s:%d success", ip, port);
 			success = 1;
+			break;
 		}
 	}
 	free(hostname);
 	freeaddrinfo(result);
 	if (success) {
+		/* 把连接服务器的套接字加入到epoll中 */
+		struct epoll_event event;
+		memset(&event, 0, sizeof(&event));
+		event.events = EPOLLIN;
+		event.data.fd = conn->server_fd;
+		if (-1 == epoll_ctl(conn->epoll_fd, EPOLL_CTL_ADD, conn->server_fd,
+			&event)) {
+			oct_log_error("add server fd to epoll fd error: %s", ERRMSG);
+			return OCT_PROXY_FAIL;
+		}
 		return OCT_PROXY_SUCCESS;
 	} else {
 		close(conn->server_fd);
@@ -99,7 +110,7 @@ oct_proxy_req_hdr(oct_conn_t *conn)
 		oct_log_info("client orderly shutdown");
 		return OCT_PROXY_STOP;
 	} else if (-1 == n) {
-		oct_log_info("recv data from client error: %s", ERRMSG);
+		oct_log_error("recv data from client error: %s", ERRMSG);
 		return OCT_PROXY_STOP;
 	}
 	/* 解析HTTP请求头 */
@@ -108,7 +119,14 @@ oct_proxy_req_hdr(oct_conn_t *conn)
 	if (NULL == conn->host) {
 		return OCT_PROXY_STOP;
 	}
+	/* 连接到服务器 */
 	if (OCT_PROXY_FAIL == oct_proxy_connect_server(conn)) {
+		return OCT_PROXY_STOP;
+	}
+	/* 把请求头发送给服务器 */
+	n = send(conn->server_fd, conn->req_hdr, n, 0);
+	if (-1 == n) {
+		oct_log_error("send data to server error: %s", ERRMSG);
 		return OCT_PROXY_STOP;
 	}
 	return OCT_PROXY_CONTINUE;
@@ -117,6 +135,23 @@ oct_proxy_req_hdr(oct_conn_t *conn)
 static int
 oct_proxy_req_body(oct_conn_t *conn)
 {
+	ssize_t n;
+	char buf[OCT_PROXY_BUF_LEN];
+
+	n = recv(conn->client_fd, buf, sizeof(buf), 0);
+	if (0 == n) {
+		oct_log_info("client orderly shutdown");
+		return OCT_PROXY_STOP;
+	} else if (-1 == n) {
+		oct_log_error("recv data from client error: %s", ERRMSG);
+		return OCT_PROXY_STOP;
+	}
+	/* 把请求发送给服务器 */
+	n = send(conn->server_fd, buf, n, 0);
+	if (-1 == n) {
+		oct_log_error("send data to server error: %s", ERRMSG);
+		return OCT_PROXY_STOP;
+	}
 	return OCT_PROXY_CONTINUE;
 }
 
@@ -128,6 +163,29 @@ oct_proxy_request(oct_conn_t *conn)
 	} else {
 		return oct_proxy_req_body(conn);
 	}
+}
+
+static int
+oct_proxy_response(oct_conn_t *conn)
+{
+	ssize_t n;
+	char buf[OCT_PROXY_BUF_LEN];
+
+	n = recv(conn->server_fd, buf, sizeof(buf), 0);
+	if (0 == n) {
+		oct_log_info("server orderly shutdown");
+		return OCT_PROXY_STOP;
+	} else if (-1 == n) {
+		oct_log_error("recv data from server error: %s", ERRMSG);
+		return OCT_PROXY_STOP;
+	}
+	/* 把响应发送给服务器 */
+	n = send(conn->client_fd, buf, n, 0);
+	if (-1 == n) {
+		oct_log_error("send data to client error: %s", ERRMSG);
+		return OCT_PROXY_STOP;
+	}
+	return OCT_PROXY_CONTINUE;
 }
 
 oct_conn_t *
@@ -145,6 +203,27 @@ oct_proxy_init()
 	c->req_hdr = (char *)malloc(REQUEST_HEADER_MAX_SIZE);
 
 	return c;
+}
+
+void
+oct_proxy_destroy(oct_conn_t *conn)
+{
+	if (0 != conn->client_fd) {
+		close(conn->client_fd);
+		conn->client_fd = 0;
+	}
+	if (0 != conn->server_fd) {
+		close(conn->server_fd);
+		conn->server_fd = 0;
+	}
+	if (0 != conn->epoll_fd) {
+		close(conn->epoll_fd);
+		conn->epoll_fd = 0;
+	}
+	if (NULL != conn->req_hdr) {
+		free(conn->req_hdr);
+		conn->req_hdr = NULL;
+	}
 }
 
 void
@@ -185,10 +264,16 @@ oct_proxy_process(oct_conn_t *conn)
 						loop = 0;
 						break;
 					}
+				} else if (ev->data.fd == conn->server_fd) {
+					if (OCT_PROXY_STOP == oct_proxy_response(conn)) {
+						loop = 0;
+						break;
+					}
 				}
 			}
 		}
 	}
 	/* 释放epoll资源 */
 	close(conn->epoll_fd);
+	conn->epoll_fd = 0;
 }

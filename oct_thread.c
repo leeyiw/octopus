@@ -15,6 +15,8 @@ oct_thread_main(void *argument)
 	struct sockaddr_in client_addr;
 	socklen_t len = sizeof(client_addr);
 	char client_ip[16];
+	oct_conn_t *conn = NULL;
+
 	while (1) {
 		/* 接收新的连接 */
 		client_fd = accept(arg->listen_fd, (struct sockaddr *)&client_addr,
@@ -32,7 +34,7 @@ oct_thread_main(void *argument)
 				ntohs(client_addr.sin_port));
 		}
 		/* 初始化代理模块 */
-		oct_conn_t *conn = oct_proxy_init();
+		conn = oct_proxy_init();
 		if (NULL == conn) {
 			oct_log_error("init proxy module error");
 			close(client_fd);
@@ -41,8 +43,8 @@ oct_thread_main(void *argument)
 		conn->client_fd = client_fd;
 		/* 进行代理 */
 		oct_proxy_process(conn);
-		/* 关闭套接字 */
-		close(client_fd);
+		/* 销毁代理模块 */
+		oct_proxy_destroy(conn);
 	}
 	return NULL;
 }

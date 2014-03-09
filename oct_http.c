@@ -45,6 +45,7 @@ oct_http_parse_req_hdr(oct_conn_t *conn, ssize_t n)
 			}
 			/* 遇到两个\r\n表示到了头部的结尾 */
 			if (conn->req_hdr[i + 2] == '\r' && conn->req_hdr[i + 3] == '\n') {
+				conn->req_hdr_len = i + 2;
 				break;
 			}
 			line_start = i + 2;
