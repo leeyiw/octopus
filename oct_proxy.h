@@ -6,8 +6,11 @@
 #define EPOLL_MAX_EVENTS		64
 #define REQUEST_HEADER_MAX_SIZE	8192
 
-#define OCT_PROXY_STOP			-1
+#define OCT_PROXY_SUCCESS		0
+#define OCT_PROXY_FAIL			-1
+
 #define OCT_PROXY_CONTINUE		0
+#define OCT_PROXY_STOP			-1
 
 typedef struct _oct_conn_t {
 	int client_fd;

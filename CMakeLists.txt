@@ -1,6 +1,10 @@
 cmake_minimum_required (VERSION 2.6)
 project (octopus)
-set (CMAKE_C_FLAGS "-g -O0 -Wall")
+
+if (CMAKE_BUILD_TYPE MATCHES DEBUG)
+	add_definitions (-DOCTOPUS_DEBUG)
+endif (CMAKE_BUILD_TYPE MATCHES DEBUG)
+
 set (SRC_LIST
 	octopus.c
 	oct_log.c

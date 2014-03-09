@@ -1,3 +1,6 @@
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
 #include <sys/types.h>
@@ -9,34 +12,104 @@
 #include "oct_proxy.h"
 
 static int
+oct_proxy_connect_server(oct_conn_t *conn)
+{
+	size_t i, hostname_len;
+	char *hostname = NULL, *colon = NULL;
+	char ip[INET_ADDRSTRLEN];
+	uint16_t port;
+	int ret;
+	struct addrinfo *p, *result, hints;
+	int success = 0;
+
+	/* 查找Host字段对应的域名和端口号 */
+	colon = conn->host + conn->host_len;
+	for (i = 0; i < conn->host_len; i++) {
+		if (conn->host[i] == ':') {
+			colon = &conn->host[i];
+			break;
+		}
+	}
+	hostname_len = colon - conn->host;
+	if (NULL == (hostname = (char *)malloc(hostname_len + 1))) {
+		oct_log_error("malloc for hostname error: %s", ERRMSG);
+		return OCT_PROXY_FAIL;
+	}
+	memcpy(hostname, conn->host, hostname_len);
+	hostname[hostname_len] = '\0';
+	if (hostname_len == conn->host_len) {
+		port = 80;
+	} else {
+		port = atoi(colon + 1);
+	}
+	oct_log_info("client request hostname: %s port: %d", hostname, port);
+	/* 把域名转换为IP */
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_protocol = IPPROTO_TCP;
+	hints.ai_flags = 0;
+	if (0 != (ret = getaddrinfo(hostname, NULL, &hints, &result))) {
+		oct_log_error("get host IP by hostname error: %s", gai_strerror(ret));
+		return OCT_PROXY_FAIL;
+	}
+	/* 创建服务器端套接字 */
+	conn->server_fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (-1 == conn->server_fd) {
+		oct_log_error("create socket for server error: %s", ERRMSG);
+		return OCT_PROXY_FAIL;
+	}
+	/* 循环尝试连接服务器 */
+	for (p = result; p != NULL; p = p->ai_next) {
+		struct sockaddr_in *server_addr = (struct sockaddr_in *)(p->ai_addr);
+		if (NULL == inet_ntop(p->ai_family, &server_addr->sin_addr, ip,
+			sizeof(ip))) {
+			oct_log_warn("get address string error: %s", ERRMSG);
+			continue;
+		}
+		oct_log_info("trying connect to server %s:%d", ip, port);
+		/* 设置端口 */
+		server_addr->sin_port = htons(port);
+		if (-1 == connect(conn->server_fd, (struct sockaddr *)server_addr,
+			p->ai_addrlen)) {
+			oct_log_error("connect to server %s:%d error: %s", ip, port,
+				ERRMSG);
+		} else {
+			oct_log_info("connect to server %s:%d success", ip, port);
+			success = 1;
+		}
+	}
+	free(hostname);
+	freeaddrinfo(result);
+	if (success) {
+		return OCT_PROXY_SUCCESS;
+	} else {
+		close(conn->server_fd);
+		conn->server_fd = 0;
+		return OCT_PROXY_FAIL;
+	}
+}
+
+static int
 oct_proxy_req_hdr(oct_conn_t *conn)
 {
-	ssize_t i, n;
-	int line_start = 0;
+	ssize_t n;
+
 	n = recv(conn->client_fd, conn->req_hdr, conn->req_hdr_max_len, 0);
-	if (n == 0) {
+	if (0 == n) {
 		oct_log_info("client orderly shutdown");
 		return OCT_PROXY_STOP;
-	} else if (n == -1) {
+	} else if (-1 == n) {
 		oct_log_info("recv data from client error: %s", ERRMSG);
 		return OCT_PROXY_STOP;
 	}
-	for (i = 0; i < n; i++) {
-		if (conn->req_hdr[i] == '\r' && conn->req_hdr[i + 1] == '\n') {
-			/* 如果是第一行，则解析请求行，否则解析请求字段 */
-			if (line_start == 0) {
-				oct_http_parse_req_line(conn, &conn->req_hdr[line_start],
-					i- line_start);
-			} else {
-				oct_http_parse_req_hdr_fields(conn, &conn->req_hdr[line_start],
-					i - line_start);
-			}
-			/* 遇到两个\r\n表示到了头部的结尾 */
-			if (conn->req_hdr[i + 2] == '\r' && conn->req_hdr[i + 3] == '\n') {
-				break;
-			}
-			line_start = i + 2;
-		}
+	/* 解析HTTP请求头 */
+	oct_http_parse_req_hdr(conn, n);
+	/* HTTP协议头部必须存在Host字段，否则断开连接 */
+	if (NULL == conn->host) {
+		return OCT_PROXY_STOP;
+	}
+	if (OCT_PROXY_FAIL == oct_proxy_connect_server(conn)) {
+		return OCT_PROXY_STOP;
 	}
 	return OCT_PROXY_CONTINUE;
 }

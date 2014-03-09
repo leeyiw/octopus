@@ -13,7 +13,7 @@ int
 main(int argc, const char *argv[])
 {
 	int listen_fd = 0;
-	struct sockaddr_in server_addr;
+	struct sockaddr_in proxy_addr;
 	const char *ip = "0.0.0.0";
 	uint16_t port = 8080;
 
@@ -30,16 +30,16 @@ main(int argc, const char *argv[])
 		exit(EXIT_FAILURE);
 	}
 	/* 设置监听地址 */
-	memset(&server_addr, 0, sizeof(server_addr));
-	server_addr.sin_family = AF_INET;
-	server_addr.sin_port = htons(port);
-	if (1 != inet_pton(AF_INET, ip, &server_addr.sin_addr)) {
-		oct_log_fatal("set server ip address to %s error", ip);
+	memset(&proxy_addr, 0, sizeof(proxy_addr));
+	proxy_addr.sin_family = AF_INET;
+	proxy_addr.sin_port = htons(port);
+	if (1 != inet_pton(AF_INET, ip, &proxy_addr.sin_addr)) {
+		oct_log_fatal("set proxy ip address to %s error", ip);
 		exit(EXIT_FAILURE);
 	}
 	/* 绑定监听地址到套接字上 */
-	if (-1 == bind(listen_fd, (const struct sockaddr *)&server_addr,
-		sizeof(server_addr))) {
+	if (-1 == bind(listen_fd, (const struct sockaddr *)&proxy_addr,
+		sizeof(proxy_addr))) {
 		oct_log_fatal("bind socket to address %s:%d error: %s", ip, port,
 			ERRMSG);
 		exit(EXIT_FAILURE);
