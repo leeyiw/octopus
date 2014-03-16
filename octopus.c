@@ -29,6 +29,11 @@ main(int argc, const char *argv[])
 		oct_log_warn("set socket reuse address error: %s", ERRMSG);
 		exit(EXIT_FAILURE);
 	}
+	/* 设置监听套接字为非阻塞 */
+	if (-1 == oct_set_nonblocking(listen_fd)) {
+		oct_log_warn("set socket nonblocking error: %s", ERRMSG);
+		exit(EXIT_FAILURE);
+	}
 	/* 设置监听地址 */
 	memset(&proxy_addr, 0, sizeof(proxy_addr));
 	proxy_addr.sin_family = AF_INET;
@@ -52,7 +57,7 @@ main(int argc, const char *argv[])
 	/* 创建线程处理请求 */
 	oct_thread_arg_t arg;
 	arg.listen_fd = listen_fd;
-	oct_thread_create(&arg, 25);
+	oct_thread_create(&arg, 5);
 	/* TODO 循环侦测线程状态，判断是否需要添加线程 */
 	while (1) {}
 	return 0;

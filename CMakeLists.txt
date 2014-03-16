@@ -7,6 +7,7 @@ endif (CMAKE_BUILD_TYPE MATCHES DEBUG)
 
 set (SRC_LIST
 	octopus.c
+	oct_conn.c
 	oct_log.c
 	oct_proxy.c
 	oct_thread.c

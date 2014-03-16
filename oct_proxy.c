@@ -5,11 +5,45 @@
 #include <sys/epoll.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <unistd.h>
 
+#include "oct_conn.h"
 #include "oct_http.h"
 #include "oct_log.h"
 #include "oct_proxy.h"
+
+static oct_conn_t *
+oct_proxy_accept(int listen_fd)
+{
+	int client_fd = 0;
+	struct sockaddr_in client_addr;
+	socklen_t len = sizeof(client_addr);
+	char client_ip[16];
+	oct_conn_t *conn = NULL;
+
+	/* 接收新的连接 */
+	client_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &len);
+	if (-1 == client_fd) {
+		oct_log_error("accpet new connection error: %s", ERRMSG);
+		return NULL;
+	}
+	/* 获取客户端IP */
+	if (NULL == inet_ntop(AF_INET, &client_addr.sin_addr, client_ip,
+		sizeof(client_ip))) {
+		oct_log_warn("get client IP error: %s", ERRMSG);
+	} else {
+		oct_log_info("accpet new connection from %s:%d", client_ip,
+			ntohs(client_addr.sin_port));
+	}
+	/* 创建连接结构体 */
+	conn = oct_conn_init();
+	if (NULL == conn) {
+		oct_log_error("init connection structure error");
+		close(client_fd);
+		return NULL;
+	}
+	conn->client_fd = client_fd;
+	return conn;
+}
 
 static int
 oct_proxy_connect_server(oct_conn_t *conn)
@@ -86,7 +120,7 @@ oct_proxy_connect_server(oct_conn_t *conn)
 		struct epoll_event event;
 		memset(&event, 0, sizeof(&event));
 		event.events = EPOLLIN;
-		event.data.fd = conn->server_fd;
+		event.data.ptr = &conn->server_callback;
 		if (-1 == epoll_ctl(conn->epoll_fd, EPOLL_CTL_ADD, conn->server_fd,
 			&event)) {
 			oct_log_error("add server fd to epoll fd error: %s", ERRMSG);
@@ -188,92 +222,76 @@ oct_proxy_response(oct_conn_t *conn)
 	return OCT_PROXY_CONTINUE;
 }
 
-oct_conn_t *
-oct_proxy_init()
-{
-	oct_conn_t *c = (oct_conn_t *)malloc(sizeof(oct_conn_t));
-	if (NULL == c) {
-		oct_log_error("malloc for oct_conn_t error: %s", ERRMSG);
-		return NULL;
-	}
-	memset(c, 0, sizeof(oct_conn_t));
-
-	c->req_hdr_len = 0;
-	c->req_hdr_max_len = REQUEST_HEADER_MAX_SIZE;
-	c->req_hdr = (char *)malloc(REQUEST_HEADER_MAX_SIZE);
-
-	return c;
-}
-
 void
-oct_proxy_destroy(oct_conn_t *conn)
+oct_proxy_loop(int listen_fd)
 {
-	if (0 != conn->client_fd) {
-		close(conn->client_fd);
-		conn->client_fd = 0;
-	}
-	if (0 != conn->server_fd) {
-		close(conn->server_fd);
-		conn->server_fd = 0;
-	}
-	if (0 != conn->epoll_fd) {
-		close(conn->epoll_fd);
-		conn->epoll_fd = 0;
-	}
-	if (NULL != conn->req_hdr) {
-		free(conn->req_hdr);
-		conn->req_hdr = NULL;
-	}
-}
-
-void
-oct_proxy_process(oct_conn_t *conn)
-{
+	int epoll_fd = 0;
 	struct epoll_event event;
 	struct epoll_event events[EPOLL_MAX_EVENTS];
-	int epoll_timeout = 10;
+	int epoll_timeout = 10 * 1000;
 	int loop = 1;
 
-	if (-1 == (conn->epoll_fd = epoll_create(2))) {
+	/* 创建epoll描述符 */
+	if (-1 == (epoll_fd = epoll_create(2))) {
 		oct_log_error("create epoll file descriptor error: %s", ERRMSG);
 		return;
 	}
-	/* 先把客户端的套接字加入到epoll监听事件里面去 */
-	memset(&event, 0, sizeof(&event));
+	/* 先把监听套接字加入到epoll监听事件里面去 */
+	memset(&event, 0, sizeof(event));
 	event.events = EPOLLIN;
-	event.data.fd = conn->client_fd;
-	if (-1 == epoll_ctl(conn->epoll_fd, EPOLL_CTL_ADD, conn->client_fd,
-		&event)) {
-		oct_log_error("add client fd to epoll fd error: %s", ERRMSG);
+	event.data.fd = listen_fd;
+	if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_fd, &event)) {
+		oct_log_error("add listen fd to epoll error: %s", ERRMSG);
 		return;
 	}
 	while (loop) {
 		int i, nevents;
-		nevents = epoll_wait(conn->epoll_fd, events, EPOLL_MAX_EVENTS,
-			epoll_timeout);
+		nevents = epoll_wait(epoll_fd, events, EPOLL_MAX_EVENTS, epoll_timeout);
 		if (-1 == nevents) {
 			oct_log_error("epoll_wait error: %s", ERRMSG);
+			continue;
 		} else if (0 == nevents) {
 			/* TODO 进行超时处理 */
 		}
+		oct_log_debug("epoll events count: %d", nevents);
 		for (i = 0; i < nevents; i++) {
 			struct epoll_event *ev = &events[i];
+			oct_conn_t *conn = NULL;
+			if (ev->data.fd == listen_fd) {
+				/* 监听套接字可读，接收新连接 */
+				oct_conn_t *new_conn = oct_proxy_accept(listen_fd);
+				/* 如果accpet失败则继续处理其他事件 */
+				if (NULL == new_conn) {
+					continue;
+				}
+				/* accpet成功，把客户端套接字加入到epoll列表中 */
+				new_conn->epoll_fd = epoll_fd;
+				memset(&event, 0, sizeof(event));
+				event.events = EPOLLIN;
+				event.data.ptr = &new_conn->client_callback;
+				if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD,
+					new_conn->client_fd, &event)) {
+					/* 如果添加到epoll列表失败则释放结构体，关闭连接 */
+					oct_log_error("add client fd to epoll error: %s",
+						ERRMSG);
+					oct_conn_destroy(new_conn);
+				}
+				continue;
+			}
+			conn = *((oct_conn_t **)ev->data.ptr);
 			if (ev->events & EPOLLIN) {
-				if (ev->data.fd == conn->client_fd) {
+				if (ev->data.ptr == &conn->client_callback) {
 					if (OCT_PROXY_STOP == oct_proxy_request(conn)) {
-						loop = 0;
-						break;
+						oct_conn_destroy(conn);
 					}
-				} else if (ev->data.fd == conn->server_fd) {
+				} else if (ev->data.ptr == &conn->server_callback) {
 					if (OCT_PROXY_STOP == oct_proxy_response(conn)) {
-						loop = 0;
-						break;
+						oct_conn_destroy(conn);
 					}
 				}
 			}
 		}
 	}
 	/* 释放epoll资源 */
-	close(conn->epoll_fd);
-	conn->epoll_fd = 0;
+	close(epoll_fd);
 }
