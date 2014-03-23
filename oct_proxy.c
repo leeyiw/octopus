@@ -22,7 +22,7 @@ oct_proxy_accept(int listen_fd)
 
 	/* 接收新的连接 */
 	client_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &len);
-	if (-1 == client_fd) {
+	if (-1 == client_fd && errno != EAGAIN) {
 		oct_log_error("accpet new connection error: %s", ERRMSG);
 		return NULL;
 	}
@@ -253,7 +253,6 @@ oct_proxy_loop(int listen_fd)
 		} else if (0 == nevents) {
 			/* TODO 进行超时处理 */
 		}
-		oct_log_debug("epoll events count: %d", nevents);
 		for (i = 0; i < nevents; i++) {
 			struct epoll_event *ev = &events[i];
 			oct_conn_t *conn = NULL;
