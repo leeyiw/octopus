@@ -28,19 +28,23 @@ oct_conn_init()
 void
 oct_conn_destroy(oct_conn_t *conn)
 {
-	/* 把套接字从epoll里面取消注册 */
-	if (-1 == epoll_ctl(conn->epoll_fd, EPOLL_CTL_DEL, conn->client_fd, NULL)) {
-		oct_log_error("delete client fd from epoll error: %s", ERRMSG);
-	}
-	if (-1 == epoll_ctl(conn->epoll_fd, EPOLL_CTL_DEL, conn->server_fd, NULL)) {
-		oct_log_error("delete client fd from epoll error: %s", ERRMSG);
-	}
-	/* 关闭套接字 */
 	if (0 != conn->client_fd) {
+		/* 把套接字从epoll里面取消注册 */
+		if (-1 == epoll_ctl(conn->epoll_fd, EPOLL_CTL_DEL, conn->client_fd,
+			NULL)) {
+			oct_log_error("delete client fd from epoll error: %s", ERRMSG);
+		}
+		/* 关闭套接字 */
 		close(conn->client_fd);
 		conn->client_fd = 0;
 	}
 	if (0 != conn->server_fd) {
+		/* 把套接字从epoll里面取消注册 */
+		if (-1 == epoll_ctl(conn->epoll_fd, EPOLL_CTL_DEL, conn->server_fd,
+			NULL)) {
+			oct_log_error("delete server fd from epoll error: %s", ERRMSG);
+		}
+		/* 关闭套接字 */
 		close(conn->server_fd);
 		conn->server_fd = 0;
 	}

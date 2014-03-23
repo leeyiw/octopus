@@ -22,8 +22,10 @@ oct_proxy_accept(int listen_fd)
 
 	/* 接收新的连接 */
 	client_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &len);
-	if (-1 == client_fd && errno != EAGAIN) {
-		oct_log_error("accpet new connection error: %s", ERRMSG);
+	if (-1 == client_fd) {
+		if (errno != EAGAIN) {
+			oct_log_error("accpet new connection error: %s", ERRMSG);
+		}
 		return NULL;
 	}
 	/* 获取客户端IP */
@@ -231,6 +233,12 @@ oct_proxy_loop(int listen_fd)
 	int epoll_timeout = 10 * 1000;
 	int loop = 1;
 
+	/* 为了防止客户端断开，程序销毁连接后，服务器端的套接字仍有事件待处理，
+	 * 导致在处理服务器发回数据时访问到已经销毁的连接内存块，维护一个已经销毁的
+	 * data.ptr队列，每次销毁连接时将这个连接相关的data.ptr取值入队列 */
+	oct_conn_t **destroyed_queue[EPOLL_MAX_EVENTS * 2];
+	int destroyed_queue_len = 0;
+
 	/* 创建epoll描述符 */
 	if (-1 == (epoll_fd = epoll_create(2))) {
 		oct_log_error("create epoll file descriptor error: %s", ERRMSG);
@@ -245,7 +253,7 @@ oct_proxy_loop(int listen_fd)
 		return;
 	}
 	while (loop) {
-		int i, nevents;
+		int i, j, nevents;
 		nevents = epoll_wait(epoll_fd, events, EPOLL_MAX_EVENTS, epoll_timeout);
 		if (-1 == nevents) {
 			oct_log_error("epoll_wait error: %s", ERRMSG);
@@ -253,6 +261,7 @@ oct_proxy_loop(int listen_fd)
 		} else if (0 == nevents) {
 			/* TODO 进行超时处理 */
 		}
+		destroyed_queue_len = 0;
 		for (i = 0; i < nevents; i++) {
 			struct epoll_event *ev = &events[i];
 			oct_conn_t *conn = NULL;
@@ -277,14 +286,37 @@ oct_proxy_loop(int listen_fd)
 				}
 				continue;
 			}
+			/* 判断epoll事件指针是否指向已经被销毁的连接结构，
+			 * 如果是则不处理该事件 */
+			for (j = 0; j < destroyed_queue_len; j++) {
+				if (ev->data.ptr == destroyed_queue[j]) {
+					break;
+				}
+			}
+			if (j != destroyed_queue_len) {
+				continue;
+			}
+			/* 处理epoll事件 */
 			conn = *((oct_conn_t **)ev->data.ptr);
 			if (ev->events & EPOLLIN) {
 				if (ev->data.ptr == &conn->client_callback) {
 					if (OCT_PROXY_STOP == oct_proxy_request(conn)) {
+						/* 销毁连接前将可能出现在epoll事件中的指针放入
+						 * 已销毁指针队列中 */
+						destroyed_queue[destroyed_queue_len++] =
+							&conn->client_callback;
+						destroyed_queue[destroyed_queue_len++] =
+							&conn->server_callback;
 						oct_conn_destroy(conn);
 					}
 				} else if (ev->data.ptr == &conn->server_callback) {
 					if (OCT_PROXY_STOP == oct_proxy_response(conn)) {
+						/* 销毁连接前将可能出现在epoll事件中的指针放入
+						 * 已销毁指针队列中 */
+						destroyed_queue[destroyed_queue_len++] =
+							&conn->client_callback;
+						destroyed_queue[destroyed_queue_len++] =
+							&conn->server_callback;
 						oct_conn_destroy(conn);
 					}
 				}

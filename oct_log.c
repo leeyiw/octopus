@@ -21,9 +21,9 @@ void oct_log(uint8_t level, const char *file, int line, const char *fmt, ...)
 	localtime_r(&current_time, &t);
 	/* 格式化日志头部 */
 	ptr += snprintf(log_data, sizeof(log_data),
-		"[%4d/%02d/%02d %02d:%02d:%02d] [%s] [%s:%d] ",
+		"[%4d/%02d/%02d %02d:%02d:%02d] [%u] [%s] [%s:%d] ",
 		t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min,
-		t.tm_sec, oct_log_level_str[level], file, line);
+		t.tm_sec, oct_log_level_str[level], pthread_self(), file, line);
 	/* 添加日志信息 */
 	va_start(ap, fmt);
 	vsnprintf(ptr, sizeof(log_data) - (ptr - log_data), fmt, ap);
