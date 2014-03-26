@@ -23,7 +23,7 @@ void oct_log(uint8_t level, const char *file, int line, const char *fmt, ...)
 	ptr += snprintf(log_data, sizeof(log_data),
 		"[%4d/%02d/%02d %02d:%02d:%02d] [%u] [%s] [%s:%d] ",
 		t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min,
-		t.tm_sec, oct_log_level_str[level], pthread_self(), file, line);
+		t.tm_sec, pthread_self(), oct_log_level_str[level], file, line);
 	/* 添加日志信息 */
 	va_start(ap, fmt);
 	vsnprintf(ptr, sizeof(log_data) - (ptr - log_data), fmt, ap);

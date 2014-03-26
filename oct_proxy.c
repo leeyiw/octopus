@@ -215,7 +215,7 @@ oct_proxy_response(oct_conn_t *conn)
 		oct_log_error("recv data from server error: %s", ERRMSG);
 		return OCT_PROXY_STOP;
 	}
-	/* 把响应发送给服务器 */
+	/* 把响应发送给客户端 */
 	n = send(conn->client_fd, buf, n, 0);
 	if (-1 == n) {
 		oct_log_error("send data to client error: %s", ERRMSG);

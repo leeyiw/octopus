@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,20 @@ main(int argc, const char *argv[])
 	struct sockaddr_in proxy_addr;
 	const char *ip = "0.0.0.0";
 	uint16_t port = 8080;
+
+	/* 屏蔽信号SIGPIPE，防止向一个已经被对端关闭的套接字调用send时，
+	 * 产生SIGPIPE导致进程退出 */
+	struct sigaction sa;
+	sa.sa_handler = SIG_IGN;
+	sa.sa_flags = 0;
+	if (-1 == sigemptyset(&sa.sa_mask)) {
+		oct_log_fatal("set signal mask empty error: %s", ERRMSG);
+		exit(EXIT_FAILURE);
+	}
+	if (-1 == sigaction(SIGPIPE, &sa, NULL)) {
+		oct_log_fatal("set ignore SIGPIPE error: %s", ERRMSG);
+		exit(EXIT_FAILURE);
+	}
 
 	oct_log_info("actopus start/running");
 	/* 初始化套接字 */
