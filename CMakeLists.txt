@@ -13,6 +13,7 @@ set (SRC_LIST
 	oct_thread.c
 	oct_http.c
 	oct_socket.c
+	oct_network.c
 	)
 add_executable (octopus ${SRC_LIST})
 target_link_libraries (octopus pthread)

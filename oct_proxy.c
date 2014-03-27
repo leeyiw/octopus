@@ -9,6 +9,7 @@
 #include "oct_conn.h"
 #include "oct_http.h"
 #include "oct_log.h"
+#include "oct_network.h"
 #include "oct_proxy.h"
 
 static oct_conn_t *
@@ -105,8 +106,9 @@ oct_proxy_connect_server(oct_conn_t *conn)
 		oct_log_info("trying connect to server %s:%d", ip, port);
 		/* 设置端口 */
 		server_addr->sin_port = htons(port);
-		if (-1 == connect(conn->server_fd, (struct sockaddr *)server_addr,
-			p->ai_addrlen)) {
+		if (-1 == oct_connect_nonb(conn->server_fd,
+								   (struct sockaddr *)server_addr,
+								   p->ai_addrlen, 5)) {
 			oct_log_error("connect to server %s:%d error: %s", ip, port,
 				ERRMSG);
 		} else {

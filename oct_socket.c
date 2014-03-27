@@ -17,3 +17,10 @@ oct_set_nonblocking(int fd)
 	int nb = 1;
 	return ioctl(fd, FIONBIO, &nb);
 }
+
+int
+oct_set_blocking(int fd)
+{
+	int nb = 0;
+	return ioctl(fd, FIONBIO, &nb);
+}
