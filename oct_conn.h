@@ -22,4 +22,4 @@ typedef struct _oct_conn_t {
 extern oct_conn_t *oct_conn_init();
 extern void oct_conn_destroy(oct_conn_t *conn);
 
-#endif
+#endif  // OCT_CONN_H_
