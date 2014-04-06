@@ -22,6 +22,10 @@ oct_conn_init()
 	c->req_hdr_max_len = REQUEST_HEADER_MAX_SIZE;
 	c->req_hdr = (char *)malloc(REQUEST_HEADER_MAX_SIZE);
 
+	c->rsp_hdr_len = 0;
+	c->rsp_hdr_max_len = RESPONSE_HEADER_MAX_SIZE;
+	c->rsp_hdr = (char *)malloc(RESPONSE_HEADER_MAX_SIZE);
+
 	return c;
 }
 

@@ -108,7 +108,7 @@ oct_proxy_connect_server(oct_conn_t *conn)
 		server_addr->sin_port = htons(port);
 		if (-1 == oct_connect_nonb(conn->server_fd,
 								   (struct sockaddr *)server_addr,
-								   p->ai_addrlen, 5)) {
+								   p->ai_addrlen, 15)) {
 			oct_log_error("connect to server %s:%d error: %s", ip, port,
 				ERRMSG);
 		} else {
@@ -143,7 +143,8 @@ oct_proxy_req_hdr(oct_conn_t *conn)
 {
 	ssize_t n;
 
-	n = recv(conn->client_fd, conn->req_hdr, conn->req_hdr_max_len, 0);
+	/* 从客户端发来的数据缓冲区中拷贝出一块头部数据 */
+	n = recv(conn->client_fd, conn->req_hdr, conn->req_hdr_max_len, MSG_PEEK);
 	if (0 == n) {
 		oct_log_info("client orderly shutdown");
 		return OCT_PROXY_STOP;
@@ -162,9 +163,18 @@ oct_proxy_req_hdr(oct_conn_t *conn)
 		return OCT_PROXY_STOP;
 	}
 	/* 把请求头发送给服务器 */
-	n = send(conn->server_fd, conn->req_hdr, n, 0);
+	n = send(conn->server_fd, conn->req_hdr, conn->req_hdr_len, 0);
 	if (-1 == n) {
 		oct_log_error("send data to server error: %s", ERRMSG);
+		return OCT_PROXY_STOP;
+	}
+	/* 真正recv */
+	n = recv(conn->client_fd, conn->req_hdr, conn->req_hdr_len, 0);
+	if (0 == n) {
+		oct_log_info("client orderly shutdown");
+		return OCT_PROXY_STOP;
+	} else if (-1 == n) {
+		oct_log_error("recv data from client error: %s", ERRMSG);
 		return OCT_PROXY_STOP;
 	}
 	return OCT_PROXY_CONTINUE;
@@ -194,7 +204,7 @@ oct_proxy_req_body(oct_conn_t *conn)
 }
 
 static int
-oct_proxy_request(oct_conn_t *conn)
+oct_proxy_req(oct_conn_t *conn)
 {
 	if (conn->req_hdr_len == 0) {
 		return oct_proxy_req_hdr(conn);
@@ -204,7 +214,41 @@ oct_proxy_request(oct_conn_t *conn)
 }
 
 static int
-oct_proxy_response(oct_conn_t *conn)
+oct_proxy_rsp_hdr(oct_conn_t *conn)
+{
+	ssize_t n;
+
+	/* 从服务器发来的数据缓冲区中拷贝出一块头部数据 */
+	n = recv(conn->server_fd, conn->rsp_hdr, conn->rsp_hdr_max_len, MSG_PEEK);
+	if (0 == n) {
+		oct_log_info("server orderly shutdown");
+		return OCT_PROXY_STOP;
+	} else if (-1 == n) {
+		oct_log_error("recv data from server error: %s", ERRMSG);
+		return OCT_PROXY_STOP;
+	}
+	/* 解析HTTP请求头 */
+	oct_http_parse_rsp_hdr(conn, n);
+	/* 把响应头发送给客户端 */
+	n = send(conn->client_fd, conn->rsp_hdr, conn->rsp_hdr_len, 0);
+	if (-1 == n) {
+		oct_log_error("send data to client error: %s", ERRMSG);
+		return OCT_PROXY_STOP;
+	}
+	/* 真正recv */
+	n = recv(conn->server_fd, conn->rsp_hdr, conn->rsp_hdr_len, 0);
+	if (0 == n) {
+		oct_log_info("server orderly shutdown");
+		return OCT_PROXY_STOP;
+	} else if (-1 == n) {
+		oct_log_error("recv data from server error: %s", ERRMSG);
+		return OCT_PROXY_STOP;
+	}
+	return OCT_PROXY_CONTINUE;
+}
+
+static int
+oct_proxy_rsp_body(oct_conn_t *conn)
 {
 	ssize_t n;
 	char buf[OCT_PROXY_BUF_LEN];
@@ -217,13 +261,23 @@ oct_proxy_response(oct_conn_t *conn)
 		oct_log_error("recv data from server error: %s", ERRMSG);
 		return OCT_PROXY_STOP;
 	}
-	/* 把响应发送给客户端 */
+	/* 把请求发送给客户端 */
 	n = send(conn->client_fd, buf, n, 0);
 	if (-1 == n) {
 		oct_log_error("send data to client error: %s", ERRMSG);
 		return OCT_PROXY_STOP;
 	}
 	return OCT_PROXY_CONTINUE;
+}
+
+static int
+oct_proxy_rsp(oct_conn_t *conn)
+{
+	if (conn->rsp_hdr_len == 0) {
+		return oct_proxy_rsp_hdr(conn);
+	} else {
+		return oct_proxy_rsp_body(conn);
+	}
 }
 
 void
@@ -302,7 +356,7 @@ oct_proxy_loop(int listen_fd)
 			conn = *((oct_conn_t **)ev->data.ptr);
 			if (ev->events & EPOLLIN) {
 				if (ev->data.ptr == &conn->client_callback) {
-					if (OCT_PROXY_STOP == oct_proxy_request(conn)) {
+					if (OCT_PROXY_STOP == oct_proxy_req(conn)) {
 						/* 销毁连接前将可能出现在epoll事件中的指针放入
 						 * 已销毁指针队列中 */
 						destroyed_queue[destroyed_queue_len++] =
@@ -312,7 +366,7 @@ oct_proxy_loop(int listen_fd)
 						oct_conn_destroy(conn);
 					}
 				} else if (ev->data.ptr == &conn->server_callback) {
-					if (OCT_PROXY_STOP == oct_proxy_response(conn)) {
+					if (OCT_PROXY_STOP == oct_proxy_rsp(conn)) {
 						/* 销毁连接前将可能出现在epoll事件中的指针放入
 						 * 已销毁指针队列中 */
 						destroyed_queue[destroyed_queue_len++] =
